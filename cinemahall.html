@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cinema Hall — Seating Chart</title>
+  <style>
+    :root{
+      --seat-size:48px;
+      --gap:10px;
+      --accent:#5b21b6;
+      --available:#e6f0ff;
+      --selected:#60a5fa;
+      --booked:#94a3b8;
+      --text:#0f172a;
+    }
+    body{font-family:Inter, system-ui, Arial, sans-serif; background:linear-gradient(180deg,#f8fafc,#eef2ff);color:var(--text);padding:24px;}
+    .app{max-width:900px;margin:0 auto;background:white;border-radius:12px;padding:20px;box-shadow:0 8px 30px rgba(13,38,81,0.08)}
+    h1{margin:0 0 6px;font-size:20px}
+    p.lead{margin:0 0 16px;color:#334155}
+
+    .screen{background:linear-gradient(90deg,#e2e8f0,#fff);padding:10px;border-radius:8px;text-align:center;font-weight:600;color:#0b1220;margin-bottom:18px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6)}
+
+    .seating-chart{display:grid;grid-template-columns:repeat(var(--cols), calc(var(--seat-size)));gap:var(--gap);justify-content:center;padding:10px}
+
+    .seat{width:var(--seat-size);height:var(--seat-size);display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;user-select:none;font-weight:600}
+    .seat.available{background:var(--available);border:2px solid rgba(91,33,182,0.08)}
+    .seat.selected{background:var(--selected);color:white;transform:translateY(-4px);box-shadow:0 6px 18px rgba(96,165,250,0.18)}
+    .seat.booked{background:var(--booked);color:#fff;cursor:not-allowed;opacity:0.9}
+
+    .row-label{grid-column:1/-1;text-align:left;font-weight:700;margin-top:6px;color:#475569}
+    .controls{display:flex;gap:12px;align-items:center;margin-top:18px;flex-wrap:wrap}
+
+    .card{padding:10px 14px;border-radius:8px;background:#fbfdff;border:1px solid #eef2ff}
+    .price{font-size:18px;font-weight:700}
+    .legend{display:flex;gap:8px;align-items:center}
+    .legend .box{width:18px;height:18px;border-radius:4px}
+
+    .footer{display:flex;justify-content:space-between;align-items:center;margin-top:18px}
+    button.primary{background:var(--accent);color:white;padding:10px 14px;border-radius:8px;border:0;font-weight:700;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid #e2e8f0;padding:10px 12px;border-radius:8px;cursor:pointer}
+
+    @media (max-width:520px){:root{--seat-size:42px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Cinema Hall — Seating Chart</h1>
+    <p class="lead">Click a seat to select it. Confirm booking to mark seats as taken. Seat state persists in your browser.</p>
+
+    <div class="screen">SCREEN</div>
+
+    <!-- seating container provided by you -->
+    <div id="seating-chart" class="seating-chart" aria-label="Seating chart"></div>
+
+    <div class="controls">
+      <div class="card">
+        <div>Seat price</div>
+        <div class="price" id="seat-price">₹150</div>
+      </div>
+
+      <div class="card">
+        <div>Selected</div>
+        <div id="selected-list">None</div>
+      </div>
+
+      <div class="card">
+        <div>Total</div>
+        <div class="price" id="total-price">₹0</div>
+      </div>
+
+      <div style="margin-left:auto" class="legend">
+        <div class="box" style="background:var(--available)"></div><small>Available</small>
+        <div class="box" style="background:var(--selected)"></div><small>Selected</small>
+        <div class="box" style="background:var(--booked)"></div><small>Booked</small>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div style="display:flex;gap:8px">
+        <button class="primary" id="confirm-btn">Confirm Booking</button>
+        <button class="ghost" id="clear-btn">Clear Selection</button>
+        <button class="ghost" id="reset-btn">Reset All Bookings</button>
+      </div>
+      <div style="font-size:13px;color:#64748b">Saved in browser (localStorage)</div>
+    </div>
+  </div>
+
+  <script>
+    // CONFIG
+    const ROWS = ['A','B','C']; // row labels
+    const COLS = 3; // columns per row
+    const SEAT_PRICE = 150; // per seat price (₹)
+
+    // Keep DOM refs
+    const chart = document.getElementById('seating-chart');
+    const selectedList = document.getElementById('selected-list');
+    const totalPriceEl = document.getElementById('total-price');
+    const seatPriceEl = document.getElementById('seat-price');
+
+    seatPriceEl.textContent = `₹${SEAT_PRICE}`;
+
+    // localStorage keys
+    const STORAGE_KEY = 'cinema_booked_seats_v1';
+
+    // states
+    // bookedSeats: Set of seatIds like 'A1'
+    let bookedSeats = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
+    let selectedSeats = new Set();
+
+    // Make css grid column variable --cols
+    document.documentElement.style.setProperty('--cols', COLS);
+
+    // Build seating chart dynamically
+    function renderChart(){
+      chart.innerHTML = '';
+
+      for(let r=0;r<ROWS.length;r++){
+        for(let c=0;c<COLS;c++){
+          const seatId = `${ROWS[r]}${c+1}`;
+          const div = document.createElement('div');
+          div.className = 'seat';
+          div.setAttribute('role','button');
+          div.setAttribute('tabindex','0');
+          div.textContent = seatId;
+          // attach onclick using the global function name used in your snippet
+          div.onclick = () => bookSeat(r, c);
+          // also keyboard support
+          div.onkeydown = (e) => { if(e.key==='Enter' || e.key===' ') { e.preventDefault(); bookSeat(r,c);} };
+
+          // set initial state
+          if(bookedSeats.has(seatId)){
+            div.classList.add('booked');
+          } else {
+            div.classList.add('available');
+          }
+
+          // set data attributes
+          div.dataset.row = r;
+          div.dataset.col = c;
+          div.dataset.seat = seatId;
+
+          chart.appendChild(div);
+        }
+      }
+
+      updateUI();
+    }
+
+    // GLOBAL function so inline onclick="bookSeat(0,0)" works
+    window.bookSeat = function(row, col){
+      const seatId = `${ROWS[row]}${col+1}`;
+      // ignore if already booked
+      if(bookedSeats.has(seatId)) return;
+
+      if(selectedSeats.has(seatId)) selectedSeats.delete(seatId); else selectedSeats.add(seatId);
+      updateUI();
+    }
+
+    function updateUI(){
+      // update seat DOM classes
+      document.querySelectorAll('.seat').forEach(el =>{
+        const id = el.dataset.seat;
+        el.classList.remove('selected','available','booked');
+        if(bookedSeats.has(id)) el.classList.add('booked');
+        else if(selectedSeats.has(id)) el.classList.add('selected');
+        else el.classList.add('available');
+      });
+
+      // update selected list and total
+      const arr = Array.from(selectedSeats).sort();
+      selectedList.textContent = arr.length ? arr.join(', ') : 'None';
+      const total = arr.length * SEAT_PRICE;
+      totalPriceEl.textContent = `₹${total}`;
+    }
+
+    // Confirm booking: move selected to booked
+    document.getElementById('confirm-btn').addEventListener('click', ()=>{
+      if(selectedSeats.size===0){ alert('No seats selected'); return; }
+      selectedSeats.forEach(s => bookedSeats.add(s));
+      selectedSeats.clear();
+      persist();
+      renderChart();
+      alert('Booking confirmed!');
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', ()=>{
+      selectedSeats.clear(); updateUI();
+    });
+
+    // Danger: Reset all bookings
+    document.getElementById('reset-btn').addEventListener('click', ()=>{
+      if(!confirm('Reset all bookings? This clears saved data in your browser.')) return;
+      bookedSeats.clear(); selectedSeats.clear(); persist(); renderChart();
+    });
+
+    function persist(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(bookedSeats)));
+    }
+
+    // initial render
+    renderChart();
+
+    // expose some helper functions in case you want to call them from console
+    window._app = {ROWS, COLS, bookedSeats, selectedSeats, renderChart, persist};
+  </script>
+</body>
+</html>
